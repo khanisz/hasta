@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard Ligi Squash</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body class="p-4">
+    <div class="container bg-white p-4 shadow rounded">
+        <h3 class="mb-4">🏆 Wyniki Ligi Squash</h3>
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <input type="text" id="searchInput" class="form-control" placeholder="🔍 Szukaj zawodnika...">
+            </div>
+            <div class="col-md-6">
+                <select id="kolejkaSelect" class="form-control">
+                    <option value="">Wszystkie kolejki</option>
+                    
+                </select>
+            </div>
+        </div>
+        <table class="table table-hover">
+            <thead class="thead-light">
+                <tr><th>Liga</th><th>Kolejka</th><th>Gracz 1</th><th>Wynik</th><th>Gracz 2</th><th>Zwycięzca</th></tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const kolejkaSelect = document.getElementById('kolejkaSelect');
+        const rows = document.querySelectorAll('.mecz-row');
+
+        function filter() {
+            const term = searchInput.value.toLowerCase();
+            const kol = kolejkaSelect.value;
+            rows.forEach(r => {
+                const matchName = r.dataset.gracze.includes(term);
+                const matchKol = (kol === "" || r.dataset.kolejka === kol);
+                r.style.display = (matchName && matchKol) ? '' : 'none';
+            });
+        }
+        searchInput.addEventListener('input', filter);
+        kolejkaSelect.addEventListener('change', filter);
+    </script>
+</body>
+</html>
