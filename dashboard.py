@@ -136,9 +136,13 @@ menu = st.sidebar.radio(
 # sie w wielu roznych sezonach, wiec bez tego filtra dane z roznych lat
 # mieszalyby sie ze soba. Nie dotyczy zakladek "Historia Gracza" i "Ranking
 # Wszechczasow", ktore celowo patrza na wszystkie sezony naraz.
+WSZYSTKIE_SEZONY = "Wszystkie sezony"
 sezony = sorted(df["sezon"].unique())
-selected_sezon = st.sidebar.selectbox("Sezon:", sezony)
-df_sezon = df[df["sezon"] == selected_sezon]
+selected_sezon = st.sidebar.selectbox("Sezon:", [WSZYSTKIE_SEZONY] + sezony)
+if selected_sezon == WSZYSTKIE_SEZONY:
+    df_sezon = df.copy()
+else:
+    df_sezon = df[df["sezon"] == selected_sezon]
 
 wszyscy_gracze = sorted(
     list(set(df_sezon["gracz_1"].unique()) | set(df_sezon["gracz_2"].unique()))
@@ -147,14 +151,26 @@ wszyscy_gracze = sorted(
 # --- SEKCJA 1: WYNIKI KOLEJKI ---
 if menu == "Wyniki Kolejki":
     st.title("🏆 Wyniki Kolejek i Grup")
-    st.caption(f"Sezon: {selected_sezon}")
+
+    # Ta zakladka pokazuje jeden, konkretny "snapshot" (kolejka + grupa), wiec
+    # przy "Wszystkie sezony" trzeba dodatkowo zawezic do jednej edycji ligi -
+    # inaczej ta sama nazwa grupy z dwoch roznych sezonow mogla by sie wymieszac.
+    if selected_sezon == WSZYSTKIE_SEZONY:
+        dostepne_sezony_tab = sorted(df_sezon["sezon"].unique())
+        sezon_tab = st.selectbox("Zawęź do sezonu (dla tej zakładki):", dostepne_sezony_tab)
+        df_sezon_tab = df_sezon[df_sezon["sezon"] == sezon_tab]
+    else:
+        sezon_tab = selected_sezon
+        df_sezon_tab = df_sezon
+
+    st.caption(f"Sezon: {sezon_tab}")
 
     col1, col2 = st.columns(2)
     with col1:
-        kolejki = sorted(df_sezon["kolejka_nazwa"].unique(), reverse=True)
+        kolejki = sorted(df_sezon_tab["kolejka_nazwa"].unique(), reverse=True)
         selected_kolejka = st.selectbox("Wybierz kolejkę:", kolejki)
     with col2:
-        df_kolejka = df_sezon[df_sezon["kolejka_nazwa"] == selected_kolejka]
+        df_kolejka = df_sezon_tab[df_sezon_tab["kolejka_nazwa"] == selected_kolejka]
         ligi = sorted(df_kolejka["liga"].unique())
         selected_liga = st.selectbox("Wybierz ligę/grupę:", ligi)
 
@@ -217,12 +233,13 @@ elif menu == "Statystyki Gracza":
 
     st.dataframe(
         mecze_gracza[
-            ["Status", "kolejka_nazwa", "liga", "gracz_1", "Wynik_Sety", "gracz_2", "male_punkty"]
+            ["Status", "sezon", "kolejka_nazwa", "liga", "gracz_1", "Wynik_Sety", "gracz_2", "male_punkty"]
         ],
         use_container_width=True,
         hide_index=True,
         column_config={
             "Status": "Wynik meczu",
+            "sezon": "Sezon",
             "kolejka_nazwa": "Kolejka",
             "liga": "Liga/Grupa",
             "gracz_1": "Gracz 1",
@@ -315,7 +332,7 @@ elif menu == "H2H (Pojedynek)":
         with c_right:
             st.markdown("### Ostatnie spotkania")
             h2h_display = h2h[
-                ["kolejka_nazwa", "liga", "gracz_1", "Wynik_Sety", "gracz_2"]
+                ["sezon", "kolejka_nazwa", "liga", "gracz_1", "Wynik_Sety", "gracz_2"]
             ].copy()
             st.dataframe(h2h_display, use_container_width=True, hide_index=True)
 
