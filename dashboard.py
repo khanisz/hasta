@@ -137,7 +137,26 @@ menu = st.sidebar.radio(
 # mieszalyby sie ze soba. Nie dotyczy zakladek "Historia Gracza" i "Ranking
 # Wszechczasow", ktore celowo patrza na wszystkie sezony naraz.
 WSZYSTKIE_SEZONY = "Wszystkie sezony"
-sezony = sorted(df["sezon"].unique())
+
+
+def posortuj_sezony(dane):
+    """Sortuje sezony malejaco wg liga_id (wyzsze ID = nowszy wpis w WordPressie),
+    zamiast alfabetycznie po nazwie."""
+    tmp = dane[["sezon", "liga_id"]].drop_duplicates().copy()
+    tmp["_liga_id_num"] = pd.to_numeric(tmp["liga_id"], errors="coerce")
+    tmp = tmp.sort_values("_liga_id_num", ascending=False)
+    return tmp["sezon"].tolist()
+
+
+def posortuj_kolejki(dane):
+    """Sortuje kolejki malejaco wg kolejka_numer (liczbowo, nie alfabetycznie -
+    inaczej '10 - ...' wypadaloby przed '2 - ...')."""
+    tmp = dane[["kolejka_nazwa", "kolejka_numer"]].drop_duplicates().copy()
+    tmp = tmp.sort_values("kolejka_numer", ascending=False, na_position="last")
+    return tmp["kolejka_nazwa"].tolist()
+
+
+sezony = posortuj_sezony(df)
 selected_sezon = st.sidebar.selectbox("Sezon:", [WSZYSTKIE_SEZONY] + sezony)
 if selected_sezon == WSZYSTKIE_SEZONY:
     df_sezon = df.copy()
@@ -156,7 +175,7 @@ if menu == "Wyniki Kolejki":
     # przy "Wszystkie sezony" trzeba dodatkowo zawezic do jednej edycji ligi -
     # inaczej ta sama nazwa grupy z dwoch roznych sezonow mogla by sie wymieszac.
     if selected_sezon == WSZYSTKIE_SEZONY:
-        dostepne_sezony_tab = sorted(df_sezon["sezon"].unique())
+        dostepne_sezony_tab = posortuj_sezony(df_sezon)
         sezon_tab = st.selectbox("Zawęź do sezonu (dla tej zakładki):", dostepne_sezony_tab)
         df_sezon_tab = df_sezon[df_sezon["sezon"] == sezon_tab]
     else:
@@ -167,7 +186,7 @@ if menu == "Wyniki Kolejki":
 
     col1, col2 = st.columns(2)
     with col1:
-        kolejki = sorted(df_sezon_tab["kolejka_nazwa"].unique(), reverse=True)
+        kolejki = posortuj_kolejki(df_sezon_tab)
         selected_kolejka = st.selectbox("Wybierz kolejkę:", kolejki)
     with col2:
         df_kolejka = df_sezon_tab[df_sezon_tab["kolejka_nazwa"] == selected_kolejka]
@@ -332,8 +351,9 @@ elif menu == "H2H (Pojedynek)":
         with c_right:
             st.markdown("### Ostatnie spotkania")
             h2h_display = h2h[
-                ["sezon", "kolejka_nazwa", "liga", "gracz_1", "Wynik_Sety", "gracz_2"]
+                ["sezon", "kolejka_nazwa", "liga", "gracz_1", "Wynik_Sety", "gracz_2", "Zwyciezca"]
             ].copy()
+            h2h_display = h2h_display.rename(columns={"Zwyciezca": "Zwycięzca 🏆"})
             st.dataframe(h2h_display, use_container_width=True, hide_index=True)
 
 # --- SEKCJA 4: HISTORIA GRACZA (wszystkie sezony) ---
