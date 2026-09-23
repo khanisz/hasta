@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import json
+import re
 import plotly.express as px
 
 # Ustawienia strony
@@ -46,24 +47,106 @@ def load_data():
         return pd.DataFrame()
 
 
-def render_macierz_wynikow(df_final, kolejnosc_graczy=None):
+def oblicz_pelne_statystyki(data):
+    """Pelne statystyki graczy w grupie - odpowiednik kolumn z oryginalnej
+    strony: miejsce, wygrane mecze, sety (zdobyte/stracone/roznica),
+    punkty (zdobyte/stracone/roznica). Sortowanie: wygrane, potem roznica
+    setow, potem roznica punktow (typowy tiebreak w lidze squasha)."""
+    stats = {}
+    for _, row in data.iterrows():
+        p1, p2 = row["gracz_1"], row["gracz_2"]
+        s1, s2 = row["sety_g1"], row["sety_g2"]
+        for p in (p1, p2):
+            if p not in stats:
+                stats[p] = {
+                    "Mecze": 0,
+                    "Wygrane": 0,
+                    "Sety Z": 0,
+                    "Sety S": 0,
+                    "Punkty Z": 0,
+                    "Punkty S": 0,
+                }
+        stats[p1]["Mecze"] += 1
+        stats[p2]["Mecze"] += 1
+        stats[p1]["Sety Z"] += s1
+        stats[p1]["Sety S"] += s2
+        stats[p2]["Sety Z"] += s2
+        stats[p2]["Sety S"] += s1
+        if s1 > s2:
+            stats[p1]["Wygrane"] += 1
+        else:
+            stats[p2]["Wygrane"] += 1
+        for s in row["szczegoly_setow"] or []:
+            pk1, pk2 = s["punkty_gracz_1"], s["punkty_gracz_2"]
+            stats[p1]["Punkty Z"] += pk1
+            stats[p1]["Punkty S"] += pk2
+            stats[p2]["Punkty Z"] += pk2
+            stats[p2]["Punkty S"] += pk1
+
+    wynik = (
+        pd.DataFrame.from_dict(stats, orient="index")
+        .reset_index()
+        .rename(columns={"index": "Gracz"})
+    )
+    wynik["Sety +/-"] = wynik["Sety Z"] - wynik["Sety S"]
+    wynik["Punkty +/-"] = wynik["Punkty Z"] - wynik["Punkty S"]
+    wynik = wynik.sort_values(
+        by=["Wygrane", "Sety +/-", "Punkty +/-"], ascending=False
+    ).reset_index(drop=True)
+    wynik.insert(0, "Miejsce", wynik.index + 1)
+    return wynik[
+        [
+            "Miejsce",
+            "Gracz",
+            "Mecze",
+            "Wygrane",
+            "Sety Z",
+            "Sety S",
+            "Sety +/-",
+            "Punkty Z",
+            "Punkty S",
+            "Punkty +/-",
+        ]
+    ]
+
+
+def render_macierz_wynikow(df_final, statystyki=None):
     """Buduje tabele-macierz podobna do tej na hastalavista.pl:
-    wiersze i kolumny to gracze, komorka to wynik ich bezposredniego meczu.
-    kolejnosc_graczy: opcjonalna lista graczy w kolejnosci od najlepszego -
-    gdy podana, uzywana zamiast sortowania alfabetycznego."""
+    wiersze i kolumny to gracze, komorka to wynik ich bezposredniego meczu,
+    a po prawej stronie kazdego wiersza dodatkowe kolumny statystyk
+    (miejsce, wygrane, sety, punkty) - tak jak na oryginalnej stronie.
+    statystyki: DataFrame z oblicz_pelne_statystyki - jesli podany, ustala
+    tez kolejnosc graczy (od najlepszego) zamiast sortowania alfabetycznego."""
     gracze_w_danych = set(df_final["gracz_1"]) | set(df_final["gracz_2"])
-    if kolejnosc_graczy:
-        # najpierw gracze w podanej kolejnosci (ranking), na koniec ci,
-        # ktorzy z jakiegos powodu nie zmiescili sie w rankingu
+    if statystyki is not None:
+        kolejnosc_graczy = statystyki["Gracz"].tolist()
         gracze = [p for p in kolejnosc_graczy if p in gracze_w_danych]
         gracze += sorted(gracze_w_danych - set(gracze))
+        staty_lookup = statystyki.set_index("Gracz").to_dict("index")
     else:
         gracze = sorted(gracze_w_danych)
+        staty_lookup = {}
 
     mecz_lookup = {}
     for _, row in df_final.iterrows():
         klucz = frozenset([row["gracz_1"], row["gracz_2"]])
         mecz_lookup[klucz] = row
+
+    DODATKOWE_KOLUMNY = [
+        ("Miejsce", "Miejsce"),
+        ("Wygrane", "Wygrane"),
+        ("Sety Z", "Sety Z"),
+        ("Sety S", "Sety S"),
+        ("Sety +/-", "Sety +/-"),
+        ("Punkty Z", "Punkty Z"),
+        ("Punkty S", "Punkty S"),
+        ("Punkty +/-", "Punkty +/-"),
+    ]
+
+    naglowek_th = (
+        '<th style="border:1px solid #ccc;padding:4px 6px;background:#e2e5ea;'
+        'font-size:11px;white-space:nowrap;">{}</th>'
+    )
 
     html = [
         '<div style="overflow-x:auto;">',
@@ -76,6 +159,8 @@ def render_macierz_wynikow(df_final, kolejnosc_graczy=None):
             '<th style="border:1px solid #ccc;padding:4px 2px;background:#f0f2f6;'
             'max-width:60px;font-size:11px;">' + p + "</th>"
         )
+    for etykieta, _ in DODATKOWE_KOLUMNY:
+        html.append(naglowek_th.format(etykieta))
     html.append("</tr>")
 
     for p1 in gracze:
@@ -117,6 +202,14 @@ def render_macierz_wynikow(df_final, kolejnosc_graczy=None):
                 f'<div style="font-weight:bold;color:{kolor}">{s1}:{s2}</div>'
                 f'<div style="font-size:10px;color:#666">{pts}</div>'
                 "</td>"
+            )
+
+        staty = staty_lookup.get(p1)
+        for etykieta, klucz in DODATKOWE_KOLUMNY:
+            wartosc = staty.get(klucz, "") if staty else ""
+            html.append(
+                '<td style="border:1px solid #ccc;padding:4px 6px;background:#f7f8fa;'
+                'font-size:11px;font-weight:600;">' + str(wartosc) + "</td>"
             )
         html.append("</tr>")
     html.append("</table></div>")
@@ -165,6 +258,22 @@ def posortuj_kolejki(dane):
     return tmp["kolejka_nazwa"].tolist()
 
 
+def posortuj_grupy(nazwy):
+    """Sortuje nazwy grup tak, ze EKSTRALIGA jest pierwsza, potem 1 LIGA,
+    2 LIGA, 3 LIGA... rosnaco liczbowo (nie alfabetycznie - inaczej
+    '10 LIGA' wypadaloby przed '2 LIGA')."""
+
+    def klucz(nazwa):
+        if nazwa.strip().upper().startswith("EKSTRALIGA"):
+            return (0, 0, nazwa)
+        dopasowanie = re.match(r"\s*(\d+)", nazwa)
+        if dopasowanie:
+            return (1, int(dopasowanie.group(1)), nazwa)
+        return (2, 0, nazwa)
+
+    return sorted(nazwy, key=klucz)
+
+
 sezony = posortuj_sezony(df)
 selected_sezon = st.sidebar.selectbox("Sezon:", [WSZYSTKIE_SEZONY] + sezony)
 if selected_sezon == WSZYSTKIE_SEZONY:
@@ -193,49 +302,18 @@ if menu == "Wyniki Kolejki":
 
     st.caption(f"Sezon: {sezon_tab}")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        kolejki = posortuj_kolejki(df_sezon_tab)
-        selected_kolejka = st.selectbox("Wybierz kolejkę:", kolejki)
-    with col2:
-        df_kolejka = df_sezon_tab[df_sezon_tab["kolejka_nazwa"] == selected_kolejka]
-        ligi = sorted(df_kolejka["liga"].unique())
-        selected_liga = st.selectbox("Wybierz ligę/grupę:", ligi)
+    kolejki = posortuj_kolejki(df_sezon_tab)
+    selected_kolejka = st.selectbox("Wybierz kolejkę:", kolejki)
 
-    df_final = df_kolejka[df_kolejka["liga"] == selected_liga].copy()
+    df_kolejka = df_sezon_tab[df_sezon_tab["kolejka_nazwa"] == selected_kolejka]
+    grupy = posortuj_grupy(df_kolejka["liga"].unique().tolist())
 
-    st.markdown("### 📊 Tabela ligowa")
+    for grupa in grupy:
+        df_final = df_kolejka[df_kolejka["liga"] == grupa].copy()
+        tabela_standings = oblicz_pelne_statystyki(df_final)
 
-    def calculate_standings(data):
-        stats = {}
-        for _, row in data.iterrows():
-            p1, p2, s1, s2 = row["gracz_1"], row["gracz_2"], row["sety_g1"], row["sety_g2"]
-            for p in [p1, p2]:
-                if p not in stats:
-                    stats[p] = {"Mecze": 0, "Wygrane": 0, "Sety +": 0, "Sety -": 0}
-            stats[p1]["Mecze"] += 1
-            stats[p2]["Mecze"] += 1
-            stats[p1]["Sety +"] += s1
-            stats[p1]["Sety -"] += s2
-            stats[p2]["Sety +"] += s2
-            stats[p2]["Sety -"] += s1
-            if s1 > s2:
-                stats[p1]["Wygrane"] += 1
-            else:
-                stats[p2]["Wygrane"] += 1
-        return (
-            pd.DataFrame.from_dict(stats, orient="index")
-            .reset_index()
-            .rename(columns={"index": "Gracz"})
-            .sort_values(by=["Wygrane", "Sety +"], ascending=False)
-        )
-
-    tabela_standings = calculate_standings(df_final)
-    st.table(tabela_standings)
-
-    st.markdown("### 🎾 Macierz wyników")
-    kolejnosc = tabela_standings["Gracz"].tolist()
-    st.markdown(render_macierz_wynikow(df_final, kolejnosc_graczy=kolejnosc), unsafe_allow_html=True)
+        st.markdown(f"### {grupa}")
+        st.markdown(render_macierz_wynikow(df_final, statystyki=tabela_standings), unsafe_allow_html=True)
 
 # --- SEKCJA 2: STATYSTYKI GRACZA ---
 elif menu == "Statystyki Gracza":
