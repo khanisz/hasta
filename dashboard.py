@@ -46,10 +46,19 @@ def load_data():
         return pd.DataFrame()
 
 
-def render_macierz_wynikow(df_final):
+def render_macierz_wynikow(df_final, kolejnosc_graczy=None):
     """Buduje tabele-macierz podobna do tej na hastalavista.pl:
-    wiersze i kolumny to gracze, komorka to wynik ich bezposredniego meczu."""
-    gracze = sorted(set(df_final["gracz_1"]) | set(df_final["gracz_2"]))
+    wiersze i kolumny to gracze, komorka to wynik ich bezposredniego meczu.
+    kolejnosc_graczy: opcjonalna lista graczy w kolejnosci od najlepszego -
+    gdy podana, uzywana zamiast sortowania alfabetycznego."""
+    gracze_w_danych = set(df_final["gracz_1"]) | set(df_final["gracz_2"])
+    if kolejnosc_graczy:
+        # najpierw gracze w podanej kolejnosci (ranking), na koniec ci,
+        # ktorzy z jakiegos powodu nie zmiescili sie w rankingu
+        gracze = [p for p in kolejnosc_graczy if p in gracze_w_danych]
+        gracze += sorted(gracze_w_danych - set(gracze))
+    else:
+        gracze = sorted(gracze_w_danych)
 
     mecz_lookup = {}
     for _, row in df_final.iterrows():
@@ -221,10 +230,12 @@ if menu == "Wyniki Kolejki":
             .sort_values(by=["Wygrane", "Sety +"], ascending=False)
         )
 
-    st.table(calculate_standings(df_final))
+    tabela_standings = calculate_standings(df_final)
+    st.table(tabela_standings)
 
     st.markdown("### 🎾 Macierz wyników")
-    st.markdown(render_macierz_wynikow(df_final), unsafe_allow_html=True)
+    kolejnosc = tabela_standings["Gracz"].tolist()
+    st.markdown(render_macierz_wynikow(df_final, kolejnosc_graczy=kolejnosc), unsafe_allow_html=True)
 
 # --- SEKCJA 2: STATYSTYKI GRACZA ---
 elif menu == "Statystyki Gracza":
