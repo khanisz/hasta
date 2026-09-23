@@ -88,24 +88,32 @@ def oblicz_pelne_statystyki(data):
         .reset_index()
         .rename(columns={"index": "Gracz"})
     )
-    wynik["Sety +/-"] = wynik["Sety Z"] - wynik["Sety S"]
-    wynik["Punkty +/-"] = wynik["Punkty Z"] - wynik["Punkty S"]
+    wynik["_Sety +/-"] = wynik["Sety Z"] - wynik["Sety S"]
+    wynik["_Punkty +/-"] = wynik["Punkty Z"] - wynik["Punkty S"]
     wynik = wynik.sort_values(
-        by=["Wygrane", "Sety +/-", "Punkty +/-"], ascending=False
+        by=["Wygrane", "_Sety +/-", "_Punkty +/-"], ascending=False
     ).reset_index(drop=True)
     wynik.insert(0, "Miejsce", wynik.index + 1)
+
+    def _fmt(z, s, roznica):
+        znak = "+" if roznica >= 0 else ""
+        return f"{z}:{s} ({znak}{roznica})"
+
+    wynik["Sety"] = wynik.apply(
+        lambda r: _fmt(r["Sety Z"], r["Sety S"], r["_Sety +/-"]), axis=1
+    )
+    wynik["Punkty"] = wynik.apply(
+        lambda r: _fmt(r["Punkty Z"], r["Punkty S"], r["_Punkty +/-"]), axis=1
+    )
+
     return wynik[
         [
             "Miejsce",
             "Gracz",
             "Mecze",
             "Wygrane",
-            "Sety Z",
-            "Sety S",
-            "Sety +/-",
-            "Punkty Z",
-            "Punkty S",
-            "Punkty +/-",
+            "Sety",
+            "Punkty",
         ]
     ]
 
@@ -135,12 +143,8 @@ def render_macierz_wynikow(df_final, statystyki=None):
     DODATKOWE_KOLUMNY = [
         ("Miejsce", "Miejsce"),
         ("Wygrane", "Wygrane"),
-        ("Sety Z", "Sety Z"),
-        ("Sety S", "Sety S"),
-        ("Sety +/-", "Sety +/-"),
-        ("Punkty Z", "Punkty Z"),
-        ("Punkty S", "Punkty S"),
-        ("Punkty +/-", "Punkty +/-"),
+        ("Sety", "Sety"),
+        ("Punkty", "Punkty"),
     ]
 
     naglowek_th = (
