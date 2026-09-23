@@ -88,23 +88,15 @@ def oblicz_pelne_statystyki(data):
         .reset_index()
         .rename(columns={"index": "Gracz"})
     )
-    wynik["_Sety +/-"] = wynik["Sety Z"] - wynik["Sety S"]
-    wynik["_Punkty +/-"] = wynik["Punkty Z"] - wynik["Punkty S"]
+    wynik["Sety +/-"] = wynik["Sety Z"] - wynik["Sety S"]
+    wynik["Punkty +/-"] = wynik["Punkty Z"] - wynik["Punkty S"]
     wynik = wynik.sort_values(
-        by=["Wygrane", "_Sety +/-", "_Punkty +/-"], ascending=False
+        by=["Wygrane", "Sety +/-", "Punkty +/-"], ascending=False
     ).reset_index(drop=True)
     wynik.insert(0, "Miejsce", wynik.index + 1)
 
-    def _fmt(z, s, roznica):
-        znak = "+" if roznica >= 0 else ""
-        return f"{z}:{s} ({znak}{roznica})"
-
-    wynik["Sety"] = wynik.apply(
-        lambda r: _fmt(r["Sety Z"], r["Sety S"], r["_Sety +/-"]), axis=1
-    )
-    wynik["Punkty"] = wynik.apply(
-        lambda r: _fmt(r["Punkty Z"], r["Punkty S"], r["_Punkty +/-"]), axis=1
-    )
+    wynik["Sety Z:S"] = wynik["Sety Z"].astype(str) + ":" + wynik["Sety S"].astype(str)
+    wynik["Punkty Z:S"] = wynik["Punkty Z"].astype(str) + ":" + wynik["Punkty S"].astype(str)
 
     return wynik[
         [
@@ -112,8 +104,10 @@ def oblicz_pelne_statystyki(data):
             "Gracz",
             "Mecze",
             "Wygrane",
-            "Sety",
-            "Punkty",
+            "Sety Z:S",
+            "Sety +/-",
+            "Punkty Z:S",
+            "Punkty +/-",
         ]
     ]
 
@@ -140,11 +134,10 @@ def render_macierz_wynikow(df_final, statystyki=None):
         klucz = frozenset([row["gracz_1"], row["gracz_2"]])
         mecz_lookup[klucz] = row
 
-    DODATKOWE_KOLUMNY = [
-        ("Miejsce", "Miejsce"),
-        ("Wygrane", "Wygrane"),
-        ("Sety", "Sety"),
-        ("Punkty", "Punkty"),
+    PROSTE_KOLUMNY = [("Miejsce", "Miejsce"), ("Wygrane", "Wygrane")]
+    BILANS_KOLUMNY = [
+        ("Sety", "Sety +/-", "Sety Z:S"),
+        ("Punkty", "Punkty +/-", "Punkty Z:S"),
     ]
 
     naglowek_th = (
@@ -163,7 +156,9 @@ def render_macierz_wynikow(df_final, statystyki=None):
             '<th style="border:1px solid #ccc;padding:4px 2px;background:#f0f2f6;'
             'max-width:60px;font-size:11px;">' + p + "</th>"
         )
-    for etykieta, _ in DODATKOWE_KOLUMNY:
+    for etykieta, _ in PROSTE_KOLUMNY:
+        html.append(naglowek_th.format(etykieta))
+    for etykieta, _, _ in BILANS_KOLUMNY:
         html.append(naglowek_th.format(etykieta))
     html.append("</tr>")
 
@@ -209,12 +204,32 @@ def render_macierz_wynikow(df_final, statystyki=None):
             )
 
         staty = staty_lookup.get(p1)
-        for etykieta, klucz in DODATKOWE_KOLUMNY:
+
+        for etykieta, klucz in PROSTE_KOLUMNY:
             wartosc = staty.get(klucz, "") if staty else ""
             html.append(
                 '<td style="border:1px solid #ccc;padding:4px 6px;background:#f7f8fa;'
                 'font-size:11px;font-weight:600;">' + str(wartosc) + "</td>"
             )
+
+        for _, klucz_bilans, klucz_zs in BILANS_KOLUMNY:
+            if staty:
+                bilans = staty[klucz_bilans]
+                zs = staty[klucz_zs]
+                znak = "+" if bilans >= 0 else ""
+                kolor_bilans = "#1a7a1a" if bilans >= 0 else "#aa3333"
+                html.append(
+                    '<td style="border:1px solid #ccc;padding:4px 6px;background:#f7f8fa;'
+                    'white-space:nowrap;">'
+                    f'<div style="font-weight:bold;color:{kolor_bilans};font-size:12px;">{znak}{bilans}</div>'
+                    f'<div style="font-size:10px;color:#666">{zs}</div>'
+                    "</td>"
+                )
+            else:
+                html.append(
+                    '<td style="border:1px solid #ccc;padding:4px;background:#f7f8fa;"></td>'
+                )
+
         html.append("</tr>")
     html.append("</table></div>")
     return "".join(html)
