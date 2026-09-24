@@ -7,13 +7,16 @@ import plotly.express as px
 # Ustawienia strony
 st.set_page_config(page_title="Hasta La Vista - Statystyki Ligi", layout="wide")
 
-DANE_PLIK = "wyniki_wszystkich_lig.json"
+DANE_PLIKI = {
+    "Squash": "wyniki_wszystkich_lig.json",
+    "Badminton": "wyniki_badminton_open.json",
+}
 
 
 @st.cache_data
-def load_data():
+def load_data(plik):
     try:
-        with open(DANE_PLIK, "r", encoding="utf-8") as f:
+        with open(plik, "r", encoding="utf-8") as f:
             data = json.load(f)
         df = pd.DataFrame(data)
 
@@ -235,13 +238,14 @@ def render_macierz_wynikow(df_final, statystyki=None):
     return "".join(html)
 
 
-df = load_data()
+# --- SIDEBAR ---
+sport = st.sidebar.selectbox("Sport:", list(DANE_PLIKI.keys()))
+df = load_data(DANE_PLIKI[sport])
 
 if df.empty:
-    st.error(f"Nie znaleziono pliku {DANE_PLIK}. Uruchom najpierw scraper!")
+    st.error(f"Nie znaleziono pliku {DANE_PLIKI[sport]}. Uruchom najpierw scraper dla: {sport}!")
     st.stop()
 
-# --- SIDEBAR ---
 menu = st.sidebar.radio(
     "Nawigacja",
     [
