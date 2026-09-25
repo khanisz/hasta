@@ -314,6 +314,14 @@ def oblicz_globalny_ranking_kolejki(dane, sezon, kolejka_nazwa):
     return globalna_lista
 
 
+def wyciagnij_typ_ligi(nazwa_sezonu):
+    """Wyciaga typ ligi z pelnej nazwy edycji, np. 'Liga Open -  sezon  Lato 2026'
+    -> 'Liga Open'. Rozne typy (Open, 35+, Kobiet, student...) to rozne pule
+    graczy i nie powinny byc ze soba porownywane w jednym rankingu/trendzie."""
+    czesc = re.split(r"-\s*sezon\b", nazwa_sezonu, flags=re.IGNORECASE)[0]
+    return czesc.strip()
+
+
 sezony = posortuj_sezony(df)
 selected_sezon = st.sidebar.selectbox("Sezon:", [WSZYSTKIE_SEZONY] + sezony)
 if selected_sezon == WSZYSTKIE_SEZONY:
@@ -564,6 +572,7 @@ elif menu == "Historia Gracza":
             wiersze_rankingu.append(
                 {
                     "Sezon": w["sezon"],
+                    "Typ ligi": wyciagnij_typ_ligi(w["sezon"]),
                     "Kolejka": w["kolejka_nazwa"],
                     "_liga_id_num": pd.to_numeric(w["liga_id"], errors="coerce"),
                     "_kolejka_numer": w["kolejka_numer"],
@@ -578,19 +587,26 @@ elif menu == "Historia Gracza":
             ranking_df = pd.DataFrame(wiersze_rankingu).sort_values(
                 by=["_liga_id_num", "_kolejka_numer"], ascending=True
             )
-            oś_x = ranking_df["Sezon"] + " / " + ranking_df["Kolejka"]
 
-            fig2 = px.line(
-                ranking_df,
-                x=oś_x,
-                y="Percentyl",
-                markers=True,
-                hover_data={"Pozycja": True},
-                title=f"Percentyl rankingu gracza {gracz} w czasie",
-            )
-            fig2.update_yaxes(range=[0, 100], title="Percentyl (wyżej = lepiej)")
-            fig2.update_xaxes(title="Kolejka", categoryorder="array", categoryarray=oś_x.tolist())
-            st.plotly_chart(fig2, use_container_width=True)
+            # Osobny wykres dla kazdego typu ligi (Open, 35+, Kobiet...) - to
+            # rozne pule zawodnikow, wiec ich percentyle nie sa porownywalne
+            # i nie powinny dzielic jednej osi/wykresu.
+            for typ in sorted(ranking_df["Typ ligi"].unique()):
+                dane_typu = ranking_df[ranking_df["Typ ligi"] == typ]
+                oś_x = dane_typu["Sezon"] + " / " + dane_typu["Kolejka"]
+
+                st.markdown(f"#### {typ}")
+                fig2 = px.line(
+                    dane_typu,
+                    x=oś_x,
+                    y="Percentyl",
+                    markers=True,
+                    hover_data={"Pozycja": True, "Sezon": True},
+                    title=f"Percentyl rankingu gracza {gracz} w czasie - {typ}",
+                )
+                fig2.update_yaxes(range=[0, 100], title="Percentyl (wyżej = lepiej)")
+                fig2.update_xaxes(title="Kolejka", categoryorder="array", categoryarray=oś_x.tolist())
+                st.plotly_chart(fig2, use_container_width=True)
 
 # --- SEKCJA 5: RANKING WSZECHCZASÓW ---
 elif menu == "Ranking Wszechczasów":
