@@ -151,6 +151,24 @@ def parsuj_tabele_wynikow(html_fragment):
 
         data_rows = trs[2:2 + n]
 
+        # Punkty rankingowe (np. 200 dla najlepszego w EKSTRALIDZE, male dla
+        # ostatnich miejsc w najnizszej lidze) to OSTATNI <td> w wierszu -
+        # przed nim sa jeszcze inne <td> (miejsce, wygrane mecze, sety,
+        # punkty), ktore juz liczymy sami, wiec nas interesuje tylko ostatni.
+        punkty_rankingowe = {}
+        for row in data_rows:
+            row_ths_tmp = row.find_all("th", recursive=False)
+            if not row_ths_tmp:
+                continue
+            nazwa_tmp = _tekst_z_divow(row_ths_tmp[0])
+            tds = row.find_all("td", recursive=False)
+            if tds:
+                tekst_pkt = tds[-1].get_text(strip=True).replace(",", ".")
+                try:
+                    punkty_rankingowe[nazwa_tmp] = float(tekst_pkt)
+                except ValueError:
+                    pass
+
         for r, row in enumerate(data_rows):
             row_ths = row.find_all("th", recursive=False)
             if not row_ths:
@@ -224,6 +242,8 @@ def parsuj_tabele_wynikow(html_fragment):
                         "gracz_2": gracz_2,
                         "gracz_1_id": liza_id1,
                         "gracz_2_id": liza_id2,
+                        "gracz_1_punkty_rankingowe": punkty_rankingowe.get(gracz_1),
+                        "gracz_2_punkty_rankingowe": punkty_rankingowe.get(gracz_2),
                         "wynik_sety": {"gracz_1": sety_1, "gracz_2": sety_2},
                         "szczegoly_setow": szczegoly_setow,
                         "Zwyciezca": gracz_1 if sety_1 > sety_2 else gracz_2,

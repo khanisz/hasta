@@ -53,8 +53,11 @@ def load_data(plik):
 def oblicz_pelne_statystyki(data):
     """Pelne statystyki graczy w grupie - odpowiednik kolumn z oryginalnej
     strony: miejsce, wygrane mecze, sety (zdobyte/stracone/roznica),
-    punkty (zdobyte/stracone/roznica). Sortowanie: wygrane, potem roznica
-    setow, potem roznica punktow (typowy tiebreak w lidze squasha)."""
+    punkty (zdobyte/stracone/roznica) oraz oficjalne punkty rankingowe ze
+    strony (np. 200 dla lidera EKSTRALIGI, male dla dolu najnizszej ligi).
+    Sortowanie: wygrane, potem roznica setow, potem roznica punktow
+    (typowy tiebreak w lidze squasha)."""
+    ma_ranking = "gracz_1_punkty_rankingowe" in data.columns
     stats = {}
     for _, row in data.iterrows():
         p1, p2 = row["gracz_1"], row["gracz_2"]
@@ -68,6 +71,7 @@ def oblicz_pelne_statystyki(data):
                     "Sety S": 0,
                     "Punkty Z": 0,
                     "Punkty S": 0,
+                    "Pkt rankingowe": None,
                 }
         stats[p1]["Mecze"] += 1
         stats[p2]["Mecze"] += 1
@@ -85,6 +89,11 @@ def oblicz_pelne_statystyki(data):
             stats[p1]["Punkty S"] += pk2
             stats[p2]["Punkty Z"] += pk2
             stats[p2]["Punkty S"] += pk1
+        if ma_ranking:
+            if row.get("gracz_1_punkty_rankingowe") is not None:
+                stats[p1]["Pkt rankingowe"] = row["gracz_1_punkty_rankingowe"]
+            if row.get("gracz_2_punkty_rankingowe") is not None:
+                stats[p2]["Pkt rankingowe"] = row["gracz_2_punkty_rankingowe"]
 
     wynik = (
         pd.DataFrame.from_dict(stats, orient="index")
@@ -93,9 +102,15 @@ def oblicz_pelne_statystyki(data):
     )
     wynik["Sety +/-"] = wynik["Sety Z"] - wynik["Sety S"]
     wynik["Punkty +/-"] = wynik["Punkty Z"] - wynik["Punkty S"]
-    wynik = wynik.sort_values(
-        by=["Wygrane", "Sety +/-", "Punkty +/-"], ascending=False
-    ).reset_index(drop=True)
+    # Sortowanie: przy dostepnych oficjalnych punktach rankingowych - wg nich
+    # (to one decyduja o miejscu na stronie), w przeciwnym razie po wlasnym
+    # wyliczeniu (wygrane / roznica setow / roznica punktow).
+    if ma_ranking and wynik["Pkt rankingowe"].notna().any():
+        wynik = wynik.sort_values(by="Pkt rankingowe", ascending=False).reset_index(drop=True)
+    else:
+        wynik = wynik.sort_values(
+            by=["Wygrane", "Sety +/-", "Punkty +/-"], ascending=False
+        ).reset_index(drop=True)
     wynik.insert(0, "Miejsce", wynik.index + 1)
 
     wynik["Sety Z:S"] = wynik["Sety Z"].astype(str) + ":" + wynik["Sety S"].astype(str)
@@ -111,6 +126,7 @@ def oblicz_pelne_statystyki(data):
             "Sety +/-",
             "Punkty Z:S",
             "Punkty +/-",
+            "Pkt rankingowe",
         ]
     ]
 
@@ -137,7 +153,7 @@ def render_macierz_wynikow(df_final, statystyki=None):
         klucz = frozenset([row["gracz_1"], row["gracz_2"]])
         mecz_lookup[klucz] = row
 
-    PROSTE_KOLUMNY = [("Miejsce", "Miejsce"), ("Wygrane", "Wygrane")]
+    PROSTE_KOLUMNY = [("Miejsce", "Miejsce"), ("Wygrane", "Wygrane"), ("Pkt rank.", "Pkt rankingowe")]
     BILANS_KOLUMNY = [
         ("Sety", "Sety +/-", "Sety Z:S"),
         ("Punkty", "Punkty +/-", "Punkty Z:S"),
@@ -209,10 +225,16 @@ def render_macierz_wynikow(df_final, statystyki=None):
         staty = staty_lookup.get(p1)
 
         for etykieta, klucz in PROSTE_KOLUMNY:
-            wartosc = staty.get(klucz, "") if staty else ""
+            wartosc = staty.get(klucz) if staty else None
+            if wartosc is None or (isinstance(wartosc, float) and pd.isna(wartosc)):
+                wartosc_str = ""
+            elif isinstance(wartosc, float):
+                wartosc_str = f"{wartosc:.1f}".rstrip("0").rstrip(".")
+            else:
+                wartosc_str = str(wartosc)
             html.append(
                 '<td style="border:1px solid #ccc;padding:4px 6px;background:#f7f8fa;'
-                'font-size:11px;font-weight:600;">' + str(wartosc) + "</td>"
+                'font-size:11px;font-weight:600;">' + wartosc_str + "</td>"
             )
 
         for _, klucz_bilans, klucz_zs in BILANS_KOLUMNY:
@@ -548,12 +570,63 @@ elif menu == "Historia Gracza":
         st.markdown("### Podsumowanie sezon po sezonie")
         st.dataframe(podsumowanie, use_container_width=True, hide_index=True)
 
-        st.markdown("### 📈 Pozycja w rankingu ligowym w czasie")
+        if "gracz_1_punkty_rankingowe" in mecze.columns:
+            st.markdown("### 🏆 Oficjalne punkty rankingowe w czasie")
+            st.caption(
+                "Punkty rankingowe wprost ze strony hastalavista.pl (np. 200 dla lidera "
+                "EKSTRALIGI, mniej dla niższych miejsc/lig) - to najbardziej wiarygodny, "
+                "oficjalny wskaźnik postępu, bo już uwzględnia poziom ligi."
+            )
+
+            mecze["_pkt_rankingowe"] = mecze.apply(
+                lambda r: r["gracz_1_punkty_rankingowe"]
+                if r["gracz_1"] == gracz
+                else r["gracz_2_punkty_rankingowe"],
+                axis=1,
+            )
+            mecze["_typ_ligi"] = mecze["sezon"].apply(wyciagnij_typ_ligi)
+
+            pkt_df = (
+                mecze.dropna(subset=["_pkt_rankingowe"])
+                .groupby(["sezon", "kolejka_nazwa"], as_index=False)
+                .agg(
+                    Pkt=("_pkt_rankingowe", "first"),
+                    _liga_id_num=("liga_id", lambda x: pd.to_numeric(x, errors="coerce").iloc[0]),
+                    _kolejka_numer=("kolejka_numer", "first"),
+                    _typ_ligi=("_typ_ligi", "first"),
+                )
+                .sort_values(by=["_liga_id_num", "_kolejka_numer"], ascending=True)
+            )
+
+            if pkt_df.empty:
+                st.info("Brak zapisanych punktów rankingowych dla tego gracza (starszy scrape bez tej kolumny?).")
+            else:
+                for typ in sorted(pkt_df["_typ_ligi"].unique()):
+                    dane_typu = pkt_df[pkt_df["_typ_ligi"] == typ]
+                    oś_x_pkt = dane_typu["sezon"] + " / " + dane_typu["kolejka_nazwa"]
+
+                    st.markdown(f"#### {typ}")
+                    fig3 = px.line(
+                        dane_typu,
+                        x=oś_x_pkt,
+                        y="Pkt",
+                        markers=True,
+                        title=f"Punkty rankingowe gracza {gracz} w czasie - {typ}",
+                    )
+                    fig3.update_yaxes(title="Punkty rankingowe")
+                    fig3.update_xaxes(
+                        title="Kolejka", categoryorder="array", categoryarray=oś_x_pkt.tolist()
+                    )
+                    fig3.update_layout(showlegend=False, height=400)
+                    st.plotly_chart(fig3, use_container_width=True)
+
+        st.markdown("### 📈 Pozycja w rankingu ligowym w czasie (nasze wyliczenie)")
         st.caption(
             "Percentyl liczony wzgledem WSZYSTKICH graczy aktywnych w danej kolejce "
             "(wszystkie grupy razem, w kolejnosci EKSTRALIGA → 1 LIGA → 2 LIGA...) - "
             "100% = najlepszy tego dnia, 0% = najgorszy. Dziala niezaleznie od tego, "
-            "ile grup/graczy bylo aktywnych danego tygodnia."
+            "ile grup/graczy bylo aktywnych danego tygodnia. Przydatne np. przy braku "
+            "oficjalnych punktów rankingowych w danych."
         )
 
         kolejki_gracza = (
