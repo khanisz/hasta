@@ -606,6 +606,7 @@ elif menu == "Historia Gracza":
                 )
                 fig2.update_yaxes(range=[0, 100], title="Percentyl (wyżej = lepiej)")
                 fig2.update_xaxes(title="Kolejka", categoryorder="array", categoryarray=oś_x.tolist())
+                fig2.update_layout(showlegend=False, height=400)
                 st.plotly_chart(fig2, use_container_width=True)
 
 # --- SEKCJA 5: RANKING WSZECHCZASÓW ---
