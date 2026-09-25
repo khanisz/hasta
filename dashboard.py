@@ -361,6 +361,10 @@ elif menu == "Statystyki Gracza":
     mecze_gracza["Status"] = mecze_gracza["Zwyciezca"].apply(
         lambda x: "✅" if x == gracz else "❌"
     )
+    mecze_gracza["_liga_id_num"] = pd.to_numeric(mecze_gracza["liga_id"], errors="coerce")
+    mecze_gracza = mecze_gracza.sort_values(
+        by=["_liga_id_num", "kolejka_numer"], ascending=[False, False]
+    )
 
     st.dataframe(
         mecze_gracza[
@@ -492,21 +496,29 @@ elif menu == "Historia Gracza":
 
         podsumowanie = (
             mecze.groupby("sezon")
-            .agg(Mecze=("wygrany", "count"), Wygrane=("wygrany", "sum"))
+            .agg(
+                Mecze=("wygrany", "count"),
+                Wygrane=("wygrany", "sum"),
+                _liga_id=("liga_id", "first"),
+            )
             .reset_index()
         )
         podsumowanie["Win Rate %"] = (
             podsumowanie["Wygrane"] / podsumowanie["Mecze"] * 100
         ).round(1)
+        podsumowanie["_liga_id_num"] = pd.to_numeric(podsumowanie["_liga_id"], errors="coerce")
+        # Chronologicznie od najstarszego do najswiezszego sezonu - naturalny
+        # kierunek odczytu trendu "forma w czasie" (lewo -> prawo, stare -> nowe)
+        podsumowanie = podsumowanie.sort_values("_liga_id_num", ascending=True)
 
         liga_per_sezon = (
             mecze.groupby("sezon")["liga"]
             .agg(lambda x: ", ".join(sorted(set(x))))
             .rename("Liga/Grupa")
         )
-        podsumowanie = podsumowanie.merge(liga_per_sezon, on="sezon").rename(
-            columns={"sezon": "Sezon"}
-        )
+        podsumowanie = podsumowanie.merge(liga_per_sezon, on="sezon").drop(
+            columns=["_liga_id", "_liga_id_num"]
+        ).rename(columns={"sezon": "Sezon"})
 
         st.markdown("### Podsumowanie sezon po sezonie")
         st.dataframe(podsumowanie, use_container_width=True, hide_index=True)
@@ -519,6 +531,7 @@ elif menu == "Historia Gracza":
             hover_data=["Mecze", "Wygrane", "Liga/Grupa"],
             title=f"Win rate gracza {gracz} w poszczególnych sezonach",
         )
+        fig.update_xaxes(categoryorder="array", categoryarray=podsumowanie["Sezon"].tolist())
         st.plotly_chart(fig, use_container_width=True)
 
 # --- SEKCJA 5: RANKING WSZECHCZASÓW ---
