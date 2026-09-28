@@ -319,23 +319,6 @@ def posortuj_grupy(nazwy):
     return sorted(nazwy, key=klucz)
 
 
-def oblicz_globalny_ranking_kolejki(dane, sezon, kolejka_nazwa):
-    """Zwraca liste WSZYSTKICH graczy aktywnych w danej kolejce danego sezonu,
-    posortowana od najlepszego do najgorszego - laczac wszystkie grupy w
-    kolejnosci hierarchii (EKSTRALIGA, 1 LIGA, 2 LIGA...), a w obrebie grupy
-    wg Miejsca ze standingsow tej grupy. Dzieki temu pozycja gracza jest
-    porownywalna miedzy kolejkami nawet gdy liczba grup/graczy sie zmienia."""
-    df_kolejka = dane[(dane["sezon"] == sezon) & (dane["kolejka_nazwa"] == kolejka_nazwa)]
-    grupy = posortuj_grupy(df_kolejka["liga"].unique().tolist())
-
-    globalna_lista = []
-    for grupa in grupy:
-        df_grupa = df_kolejka[df_kolejka["liga"] == grupa]
-        staty = oblicz_pelne_statystyki(df_grupa)
-        globalna_lista.extend(staty["Gracz"].tolist())
-    return globalna_lista
-
-
 def wyciagnij_typ_ligi(nazwa_sezonu):
     """Wyciaga typ ligi z pelnej nazwy edycji, np. 'Liga Open -  sezon  Lato 2026'
     -> 'Liga Open'. Rozne typy (Open, 35+, Kobiet, student...) to rozne pule
@@ -619,68 +602,6 @@ elif menu == "Historia Gracza":
                     )
                     fig3.update_layout(showlegend=False, height=400)
                     st.plotly_chart(fig3, use_container_width=True)
-
-        st.markdown("### 📈 Pozycja w rankingu ligowym w czasie (nasze wyliczenie)")
-        st.caption(
-            "Percentyl liczony wzgledem WSZYSTKICH graczy aktywnych w danej kolejce "
-            "(wszystkie grupy razem, w kolejnosci EKSTRALIGA → 1 LIGA → 2 LIGA...) - "
-            "100% = najlepszy tego dnia, 0% = najgorszy. Dziala niezaleznie od tego, "
-            "ile grup/graczy bylo aktywnych danego tygodnia. Przydatne np. przy braku "
-            "oficjalnych punktów rankingowych w danych."
-        )
-
-        kolejki_gracza = (
-            mecze[["sezon", "kolejka_nazwa", "liga_id", "kolejka_numer"]]
-            .drop_duplicates()
-        )
-
-        wiersze_rankingu = []
-        for _, w in kolejki_gracza.iterrows():
-            ranking = oblicz_globalny_ranking_kolejki(df, w["sezon"], w["kolejka_nazwa"])
-            if gracz not in ranking or len(ranking) < 2:
-                continue
-            pozycja = ranking.index(gracz) + 1
-            razem = len(ranking)
-            percentyl = round((1 - (pozycja - 1) / (razem - 1)) * 100, 1)
-            wiersze_rankingu.append(
-                {
-                    "Sezon": w["sezon"],
-                    "Typ ligi": wyciagnij_typ_ligi(w["sezon"]),
-                    "Kolejka": w["kolejka_nazwa"],
-                    "_liga_id_num": pd.to_numeric(w["liga_id"], errors="coerce"),
-                    "_kolejka_numer": w["kolejka_numer"],
-                    "Pozycja": f"{pozycja}/{razem}",
-                    "Percentyl": percentyl,
-                }
-            )
-
-        if not wiersze_rankingu:
-            st.info("Za mało danych, żeby policzyć pozycję w rankingu (potrzeba min. 2 aktywnych graczy w kolejce).")
-        else:
-            ranking_df = pd.DataFrame(wiersze_rankingu).sort_values(
-                by=["_liga_id_num", "_kolejka_numer"], ascending=True
-            )
-
-            # Osobny wykres dla kazdego typu ligi (Open, 35+, Kobiet...) - to
-            # rozne pule zawodnikow, wiec ich percentyle nie sa porownywalne
-            # i nie powinny dzielic jednej osi/wykresu.
-            for typ in sorted(ranking_df["Typ ligi"].unique()):
-                dane_typu = ranking_df[ranking_df["Typ ligi"] == typ]
-                oś_x = dane_typu["Sezon"] + " / " + dane_typu["Kolejka"]
-
-                st.markdown(f"#### {typ}")
-                fig2 = px.line(
-                    dane_typu,
-                    x=oś_x,
-                    y="Percentyl",
-                    markers=True,
-                    hover_data={"Pozycja": True, "Sezon": True},
-                    title=f"Percentyl rankingu gracza {gracz} w czasie - {typ}",
-                )
-                fig2.update_yaxes(range=[0, 100], title="Percentyl (wyżej = lepiej)")
-                fig2.update_xaxes(title="Kolejka", categoryorder="array", categoryarray=oś_x.tolist())
-                fig2.update_layout(showlegend=False, height=400)
-                st.plotly_chart(fig2, use_container_width=True)
 
 # --- SEKCJA 5: RANKING WSZECHCZASÓW ---
 elif menu == "Ranking Wszechczasów":
